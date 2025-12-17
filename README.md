@@ -1281,14 +1281,68 @@ class GridCanvas(ttk.Frame):
         for (r, c), val in self.cell_numbers.items():
             x, y = (c - 0.5) * self.cell_px, (r - 0.5) * self.cell_px
             self.canvas.create_text(x, y, text=str(val), font=("Arial", 8))
-
+            
+# [추가할 코드] GridCanvas 클래스 내부 메서드로 추가
+    def cell_to_rect_global(self, idx, r, c):
+        """특정 블록(idx)의 (r, c) 셀에 해당하는 캔버스 글로벌 좌표(x1, y1, x2, y2)를 반환"""
+        for info in self.block_layout_info:
+            # info 구조: (idx, y_start, y_end, x_start, x_end, rows, cols)
+            if info[0] == idx:
+                _, y_start, _, x_start, _, _, _ = info
+                x1 = x_start + (c - 1) * self.cell_px
+                y1 = y_start + (r - 1) * self.cell_px
+                x2 = x1 + self.cell_px
+                y2 = y1 + self.cell_px
+                return x1, y1, x2, y2
+        return None
+        
     def on_press(self, e):
         self._save_state_for_undo()
-        self.drag_start = self.xy_to_cell(e.x, e.y)
-        self.update_drag_rect(e, left_click=True)
+        cx = self.canvas.canvasx(e.x)
+        cy = self.canvas.canvasy(e.y)
+        res = self.xy_to_cell_global(cx, cy)
+        
+        if res:
+            self.drag_start = res  # (idx, r, c)
+            
+            # 드래그 사각형 초기화 (선택된 셀에 딱 맞게 시작)
+            if self.drag_rect_id: 
+                self.canvas.delete(self.drag_rect_id)
+            
+            rect = self.cell_to_rect_global(*res)
+            if rect:
+                x1, y1, x2, y2 = rect
+                self.drag_rect_id = self.canvas.create_rectangle(x1, y1, x2, y2, outline="red", width=2, dash=(4, 4))
 
     def on_drag(self, e):
-        self.update_drag_rect(e, left_click=True)
+        if not self.drag_start: return
+        
+        cx = self.canvas.canvasx(e.x)
+        cy = self.canvas.canvasy(e.y)
+        
+        # 현재 마우스 위치의 셀 찾기
+        current_res = self.xy_to_cell_global(cx, cy)
+        
+        # 같은 블록 내에 있을 때만 드래그 영역 업데이트
+        if current_res and current_res[0] == self.drag_start[0]:
+            start_idx, start_r, start_c = self.drag_start
+            _, end_r, end_c = current_res
+            
+            # 시작 셀과 현재 셀을 포함하는 최소/최대 범위 계산
+            min_r, max_r = min(start_r, end_r), max(start_r, end_r)
+            min_c, max_c = min(start_c, end_c), max(start_c, end_c)
+            
+            # 픽셀 좌표로 변환 (좌상단 셀의 시작점 ~ 우하단 셀의 끝점)
+            rect_start = self.cell_to_rect_global(start_idx, min_r, min_c)
+            rect_end = self.cell_to_rect_global(start_idx, max_r, max_c)
+            
+            if rect_start and rect_end:
+                x1, y1, _, _ = rect_start
+                _, _, x2, y2 = rect_end
+                
+                # 사각형 업데이트 (격자에 스냅됨)
+                if self.drag_rect_id:
+                    self.canvas.coords(self.drag_rect_id, x1, y1, x2, y2)
 
     def on_release(self, e):
         if self.drag_rect_id:
@@ -1319,11 +1373,45 @@ class GridCanvas(ttk.Frame):
 
     def on_press_right(self, e):
         self._save_state_for_undo()
-        self.drag_start_right = self.xy_to_cell(e.x, e.y)
-        self.update_drag_rect(e, left_click=False)
+        cx = self.canvas.canvasx(e.x)
+        cy = self.canvas.canvasy(e.y)
+        res = self.xy_to_cell_global(cx, cy)
+        
+        if res:
+            self.drag_start = res
+            
+            if self.drag_rect_id: self.canvas.delete(self.drag_rect_id)
+            
+            rect = self.cell_to_rect_global(*res)
+            if rect:
+                x1, y1, x2, y2 = rect
+                # 지우개는 파란색 점선
+                self.drag_rect_id = self.canvas.create_rectangle(x1, y1, x2, y2, outline="blue", width=2, dash=(4, 4))
 
     def on_drag_right(self, e):
-        self.update_drag_rect(e, left_click=False)
+        # 좌클릭 드래그와 로직 동일 (색상만 다름)
+        if not self.drag_start: return
+        
+        cx = self.canvas.canvasx(e.x)
+        cy = self.canvas.canvasy(e.y)
+        current_res = self.xy_to_cell_global(cx, cy)
+        
+        if current_res and current_res[0] == self.drag_start[0]:
+            start_idx, start_r, start_c = self.drag_start
+            _, end_r, end_c = current_res
+            
+            min_r, max_r = min(start_r, end_r), max(start_r, end_r)
+            min_c, max_c = min(start_c, end_c), max(start_c, end_c)
+            
+            rect_start = self.cell_to_rect_global(start_idx, min_r, min_c)
+            rect_end = self.cell_to_rect_global(start_idx, max_r, max_c)
+            
+            if rect_start and rect_end:
+                x1, y1, _, _ = rect_start
+                _, _, x2, y2 = rect_end
+                
+                if self.drag_rect_id:
+                    self.canvas.coords(self.drag_rect_id, x1, y1, x2, y2)
 
     def on_release_right(self, e):
         if self.drag_rect_id_right:
